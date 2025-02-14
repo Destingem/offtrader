@@ -1,4 +1,4 @@
-"use client";
+{/*"use client";
 
 import { useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
@@ -68,6 +68,15 @@ export default function PaymentSuccessfulPage() {
         updateMembership();
     }, [paymentId, user, refreshUser]);
 
+    return (
+        <div>
+            <h1>Payment Successful</h1>
+            <p>Updating your membership...</p>
+        </div>
+    );
+} */}
+
+export default function PaymentSuccessfulPage() {
     return (
         <div>
             <h1>Payment Successful</h1>

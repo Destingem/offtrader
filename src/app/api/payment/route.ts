@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { databases } from "@/lib/serverAppwriteClient";
 
-const pricingPlans = {
+const pricingPlans: Record<"basic" | "pro" | "elite", { monthly: string; yearly: string }> = {
   basic: { monthly: "49.00", yearly: "470.00" },
   pro: { monthly: "99.00", yearly: "950.00" },
   elite: { monthly: "199.00", yearly: "1900.00" },
@@ -9,7 +9,12 @@ const pricingPlans = {
 
 export async function POST(request: Request) {
   try {
-    const { planId, billingPeriod, description, userId } = await request.json();
+    const { planId, billingPeriod, description, userId } = await request.json() as {
+      planId: "basic" | "pro" | "elite";
+      billingPeriod: "monthly" | "yearly";
+      description?: string;
+      userId: string;
+    };
 
     if (
       !planId ||

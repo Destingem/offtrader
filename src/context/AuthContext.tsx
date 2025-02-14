@@ -29,19 +29,28 @@ const AuthContext = createContext<AuthContextType>({
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
 
-  const refreshUser = async () => {
+  const refreshUser = async (): Promise<User | null> => {
     try {
       if (account) {
         // Check if account is initialized
         const currentUser = await account.get();
-        setUser(currentUser);
-        return currentUser;
+  
+        if (currentUser) {
+          const user: User = {
+            $id: currentUser.$id,
+            name: currentUser.name,
+            email: currentUser.email,
+          };
+          
+          setUser(user);
+          return user;
+        }
       }
     } catch (error) {
       setUser(null);
       console.error("Failed to refresh user:", error);
-      return null;
     }
+    return null; // Explicitně vracíme null, místo aby se funkce ukončila bez návratové hodnoty
   };
 
   const login = async (email: string, password: string) => {
