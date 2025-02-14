@@ -1,44 +1,77 @@
-import Link from "next/link"
-import { CheckCircle } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+"use client";
 
-export default function PaymentSuccessful() {
-  return (
-    <div className="min-h-screen bg-background flex items-center justify-center">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <div className="flex justify-center mb-4">
-            <CheckCircle className="h-16 w-16 text-green-500" />
-          </div>
-          <CardTitle className="text-2xl font-bold">Payment Successful!</CardTitle>
-          <CardDescription>Thank you for joining OFFTRADER Academy</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="text-center">
-            <p className="text-lg font-semibold">Order Summary</p>
-            <p className="text-muted-foreground">Pro Plan - Annual Subscription</p>
-            <p className="text-2xl font-bold mt-2">$950.00</p>
-          </div>
-          <div className="border-t pt-4">
-            <p className="font-semibold mb-2">Next Steps:</p>
-            <ul className="list-disc list-inside text-sm text-muted-foreground">
-              <li>Check your email for login details</li>
-              <li>Set up your profile in the member area</li>
-              <li>Explore available courses and start learning</li>
-            </ul>
-          </div>
-        </CardContent>
-        <CardFooter className="flex flex-col space-y-2">
-          <Button asChild className="w-full">
-            <Link href="www.offtrader.ru">Go to Platform</Link>
-          </Button>
-          <Button asChild variant="outline" className="w-full">
-            <Link href="/">Return to Homepage</Link>
-          </Button>
-        </CardFooter>
-      </Card>
-    </div>
-  )
+import { useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { useAuth } from '@/context/AuthContext';
+import { account, client, ID } from '@/lib/appwriteClient';
+
+export default function PaymentSuccessfulPage() {
+    const searchParams = useSearchParams();
+    const paymentId = searchParams.get('id');
+    const { user, refreshUser } = useAuth();
+
+    useEffect(() => {
+        const updateMembership = async () => {
+            if (!paymentId || !user) return;
+
+            try {
+                // Fetch payment details from YooKassa to verify success
+                const endpoint = `${process.env.YOOKASSA_ENDPOINT}/${paymentId}`;
+                const shopId = process.env.YOOKASSA_SHOP_ID;
+                const secretKey = process.env.YOOKASSA_SECRET_KEY;
+                const auth = Buffer.from(`${shopId}:${secretKey}`).toString("base64");
+
+                const response = await fetch(endpoint, {
+                    method: "GET",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": `Basic ${auth}`,
+                    },
+                });
+
+                const paymentData = await response.json();
+
+                if (paymentData.status === 'succeeded') {
+                    // Determine planId and billingPeriod from payment description or metadata
+                    // This is just an example, adjust based on your implementation
+                    const planId = paymentData.description.split(' ')[0]; // e.g., "basic"
+                    const billingPeriod = paymentData.description.split(' ')[1]; // e.g., "monthly"
+
+                    // Calculate expiry date based on billing period
+                    const expiryDate = new Date();
+                    if (billingPeriod === 'monthly') {
+                        expiryDate.setMonth(expiryDate.getMonth() + 1);
+                    } else if (billingPeriod === 'yearly') {
+                        expiryDate.setFullYear(expiryDate.getFullYear() + 1);
+                    }
+
+                    // Update user document in Appwrite
+                    await client.database.updateDocument(
+                        'YOUR_DATABASE_ID',
+                        'YOUR_COLLECTION_ID',
+                        user.$id,
+                        {
+                            membershipStatus: planId,
+                            subscriptionExpiry: expiryDate.getTime(),
+                        }
+                    );
+
+                    await refreshUser(); // Refresh user context
+                } else {
+                    console.error('Payment failed:', paymentData);
+                }
+            } catch (error) {
+                console.error('Failed to update membership:', error);
+            }
+        };
+
+        updateMembership();
+    }, [paymentId, user, refreshUser]);
+
+    return (
+        <div>
+            <h1>Payment Successful</h1>
+            <p>Updating your membership...</p>
+        </div>
+    );
 }
-

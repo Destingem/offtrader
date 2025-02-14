@@ -1,6 +1,5 @@
-// app/login/page.jsx
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -11,11 +10,17 @@ import { useAuth } from "@/context/AuthContext";
 import { account } from "@/lib/appwriteClient";
 
 export default function LoginPage() {
-  const { login } = useAuth();
+  const { user, login } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const router = useRouter();
+
+  useEffect(() => {
+    if (user) {
+      router.push("/dashboard");
+    }
+  }, [user, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -23,7 +28,7 @@ export default function LoginPage() {
 
     try {
       await login(email, password);
-      router.push("/"); // Redirect after successful login
+      router.push("/dashboard");
     } catch (err: any) {
       setError(err.message || "Login failed");
     }
@@ -34,9 +39,7 @@ export default function LoginPage() {
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle>Login</CardTitle>
-          <CardDescription>
-            Enter your credentials to access your account
-          </CardDescription>
+          <CardDescription>Enter your credentials to access your account</CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit}>
           <CardContent className="space-y-4">
@@ -68,12 +71,14 @@ export default function LoginPage() {
             <Button type="submit" className="w-full">
               Login
             </Button>
-            <p className="text-sm text-center text-muted-foreground">
-              Don't have an account?{" "}
+            <div className="flex justify-between text-sm">
+              <Link href="/forgot-password" className="text-primary hover:underline">
+                Forgot Password?
+              </Link>
               <Link href="/register" className="text-primary hover:underline">
                 Register
               </Link>
-            </p>
+            </div>
           </CardFooter>
         </form>
       </Card>

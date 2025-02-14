@@ -11,7 +11,7 @@ interface User {
 interface AuthContextType {
   user: User | null;
   setUser: (user: User | null) => void;
-  refreshUser: () => void;
+  refreshUser: () => Promise<User | null>;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -20,7 +20,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType>({
   user: null,
   setUser: () => {},
-  refreshUser: () => {},
+  refreshUser: async () => null,
   login: async () => {},
   register: async () => {},
   logout: async () => {},
@@ -35,10 +35,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         // Check if account is initialized
         const currentUser = await account.get();
         setUser(currentUser);
+        return currentUser;
       }
     } catch (error) {
       setUser(null);
       console.error("Failed to refresh user:", error);
+      return null;
     }
   };
 
@@ -74,19 +76,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   useEffect(() => {
     refreshUser();
-  }, []); // Call refreshUser on component mount
+  }, []);
 
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        setUser,
-        refreshUser,
-        login,
-        register,
-        logout,
-      }}
-    >
+    <AuthContext.Provider value={{ user, setUser, refreshUser, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   );

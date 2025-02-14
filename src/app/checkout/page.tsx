@@ -1,9 +1,15 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  CardFooter,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,6 +17,7 @@ import { Check } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { SiteHeader } from "@/components/site-header";
 import { Footer } from "@/components/footer";
+import { useAuth } from "@/context/AuthContext";
 
 const membershipPlans = [
   {
@@ -19,7 +26,12 @@ const membershipPlans = [
     monthlyPrice: 49,
     yearlyPrice: 470,
     description: "Essential tools to start your journey",
-    features: ["Access to 2 courses", "Basic community access", "Monthly Q&A sessions", "Email support"],
+    features: [
+      "Access to 2 courses",
+      "Basic community access",
+      "Monthly Q&A sessions",
+      "Email support",
+    ],
   },
   {
     id: "pro",
@@ -53,17 +65,14 @@ const membershipPlans = [
 ];
 
 export default function CheckoutPage() {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [selectedPlan, setSelectedPlan] = useState(membershipPlans[1]);
+  const router = useRouter();
+  const { user, register, refreshUser } = useAuth();
   const [isYearly, setIsYearly] = useState(true);
+  const [selectedPlan, setSelectedPlan] = useState(membershipPlans[1]);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
   const [error, setError] = useState("");
-  const router = useRouter();
-
-  useEffect(() => {
-    // Zde můžete načíst stav přihlášení uživatele, pokud je třeba
-  }, []);
 
   const handlePlanChange = (plan: typeof membershipPlans[0]) => {
     setSelectedPlan(plan);
@@ -77,19 +86,43 @@ export default function CheckoutPage() {
     e.preventDefault();
     setError("");
 
-    // Sestavíme payload s hardcodovanými cenami dle výběru uživatele
     const billingPeriod = isYearly ? "yearly" : "monthly";
-    const payload = {
+    let currentUser = user;
+
+    // If there is no valid session, register the user using the provided inputs.
+    if (!currentUser) {
+      if (!email || !password || !name) {
+        setError("Vyplňte prosím všechna pole pro registraci.");
+        return;
+      }
+      try {
+        await register(email, password, name);
+        // Wait briefly to allow session initialization
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        currentUser = await refreshUser();
+        if (!currentUser) {
+          setError("Uživatel nebyl nalezen po registraci.");
+          return;
+        }
+      } catch (regError: any) {
+        setError(regError.message || "Registrace se nezdařila");
+        return;
+      }
+    }
+
+    // Prepare the payment payload with internal data.
+    const paymentPayload = {
       planId: selectedPlan.id,
       billingPeriod,
       description: `${selectedPlan.name} Plan Subscription`,
+      userId: currentUser.$id,
     };
 
     try {
       const res = await fetch("/api/payment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(paymentPayload),
       });
 
       const data = await res.json();
@@ -99,8 +132,8 @@ export default function CheckoutPage() {
         return;
       }
 
-      // Přesměrujeme uživatele na URL pro potvrzení platby, kterou vrací API (confirmation.confirmation_url)
-      if (data.confirmation && data.confirmation.confirmation_url) {
+      // Redirect to confirmation URL from YooKassa.
+      if (data.confirmation?.confirmation_url) {
         window.location.href = data.confirmation.confirmation_url;
       } else {
         setError("Chyba: Neplatná odpověď od platebního systému");
@@ -115,12 +148,18 @@ export default function CheckoutPage() {
       <SiteHeader />
       <main className="flex-grow">
         <div className="container mx-auto max-w-5xl py-12">
-          <h1 className="text-3xl font-bold text-center mb-8">Choose Your Membership</h1>
+          <h1 className="text-3xl font-bold text-center mb-8">
+            Choose Your Membership
+          </h1>
           <form onSubmit={handleSubmit}>
             <div className="flex justify-center items-center space-x-4 mb-8">
-              <span className={!isYearly ? "font-semibold" : "text-muted-foreground"}>Monthly</span>
+              <span className={!isYearly ? "font-semibold" : "text-muted-foreground"}>
+                Monthly
+              </span>
               <Switch checked={isYearly} onCheckedChange={setIsYearly} />
-              <span className={isYearly ? "font-semibold" : "text-muted-foreground"}>Yearly (save up to 20%)</span>
+              <span className={isYearly ? "font-semibold" : "text-muted-foreground"}>
+                Yearly (save up to 20%)
+              </span>
             </div>
 
             <div className="grid gap-6 mb-8 md:grid-cols-3">
@@ -128,7 +167,9 @@ export default function CheckoutPage() {
                 <Card
                   key={plan.id}
                   className={`relative cursor-pointer transition-all duration-200 ${
-                    selectedPlan.id === plan.id ? "border-primary ring-2 ring-primary" : "hover:border-primary"
+                    selectedPlan.id === plan.id
+                      ? "border-primary ring-2 ring-primary"
+                      : "hover:border-primary"
                   }`}
                   onClick={() => handlePlanChange(plan)}
                 >
@@ -171,11 +212,14 @@ export default function CheckoutPage() {
               ))}
             </div>
 
-            {!isLoggedIn && (
+            {/* Show registration form if there is no valid session */}
+            {!user && (
               <Card className="mb-8">
                 <CardHeader>
                   <CardTitle>Create Account</CardTitle>
-                  <CardDescription>Create an account to complete your order</CardDescription>
+                  <CardDescription>
+                    Create an account to complete your order
+                  </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
@@ -186,6 +230,17 @@ export default function CheckoutPage() {
                       placeholder="your@email.com"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="name">Name</Label>
+                    <Input
+                      id="name"
+                      type="text"
+                      placeholder="Your name"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
                       required
                     />
                   </div>
@@ -221,7 +276,7 @@ export default function CheckoutPage() {
               </CardContent>
               <CardFooter>
                 <Button type="submit" className="w-full">
-                  {isLoggedIn ? "Complete Payment" : "Create Account & Pay"}
+                  {user ? "Complete Payment" : "Create Account & Pay"}
                 </Button>
               </CardFooter>
             </Card>

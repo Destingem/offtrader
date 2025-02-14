@@ -8,6 +8,7 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 import { usePathname } from "next/navigation"
 import { useThemeStore } from "@/lib/store"
 import { useRouter } from "next/navigation"
+import { useAuth } from "@/context/AuthContext"
 
 function ThemeToggle() {
   const { theme, setTheme } = useThemeStore()
@@ -30,10 +31,11 @@ export function SiteHeader() {
   const [isScrolled, setIsScrolled] = useState(false)
   const { theme } = useThemeStore()
   const [isOpen, setIsOpen] = useState(false)
-  const [isLoggedIn, setIsLoggedIn] = useState(false) // This should be determined by your auth logic
-  const [isAdmin, setIsAdmin] = useState(false) // This should be determined by your auth logic
   const pathname = usePathname()
   const router = useRouter()
+  const { user, logout } = useAuth()
+
+  const isLoggedIn = Boolean(user)
 
   useEffect(() => {
     const handleScroll = () => {
@@ -61,6 +63,11 @@ export function SiteHeader() {
     { name: "Reviews", id: "reviews" },
     { name: "FAQ", id: "faq" },
   ]
+
+  const handleLogout = async () => {
+    await logout()
+    router.push("/")
+  }
 
   return (
     <header className={`sticky top-0 z-50 w-full transition-colors duration-300 ${headerBg}`}>
@@ -94,11 +101,9 @@ export function SiteHeader() {
               <Button variant={buttonVariant} asChild className="hidden md:inline-flex">
                 <Link href="/dashboard">Dashboard</Link>
               </Button>
-              {isAdmin && (
-                <Button variant={buttonVariant} asChild className="hidden md:inline-flex">
-                  <Link href="/admin">Admin Panel</Link>
-                </Button>
-              )}
+              <Button variant={buttonVariant} className="hidden md:inline-flex" onClick={handleLogout}>
+                Logout
+              </Button>
             </>
           ) : (
             <>
@@ -108,11 +113,11 @@ export function SiteHeader() {
               <Button variant={buttonVariant} asChild className="hidden md:inline-flex">
                 <Link href="/register">Register</Link>
               </Button>
+              <Button variant={buttonVariant} asChild className="hidden md:inline-flex">
+                <Link href="/checkout">Get Started</Link>
+              </Button>
             </>
           )}
-          <Button variant={buttonVariant} asChild className="hidden md:inline-flex">
-            <Link href="/checkout">Get Started</Link>
-          </Button>
           <Sheet open={isOpen} onOpenChange={setIsOpen}>
             <SheetTrigger asChild>
               <Button variant="ghost" size="icon" className="md:hidden">
@@ -143,11 +148,9 @@ export function SiteHeader() {
                     <Button variant={buttonVariant} asChild className="w-full" onClick={() => setIsOpen(false)}>
                       <Link href="/dashboard">Dashboard</Link>
                     </Button>
-                    {isAdmin && (
-                      <Button variant={buttonVariant} asChild className="w-full" onClick={() => setIsOpen(false)}>
-                        <Link href="/admin">Admin Panel</Link>
-                      </Button>
-                    )}
+                    <Button variant={buttonVariant} className="w-full" onClick={() => { setIsOpen(false); handleLogout() }}>
+                      Logout
+                    </Button>
                   </>
                 ) : (
                   <>
@@ -157,11 +160,11 @@ export function SiteHeader() {
                     <Button variant={buttonVariant} asChild className="w-full" onClick={() => setIsOpen(false)}>
                       <Link href="/register">Register</Link>
                     </Button>
+                    <Button variant={buttonVariant} asChild className="w-full" onClick={() => setIsOpen(false)}>
+                      <Link href="/checkout">Get Started</Link>
+                    </Button>
                   </>
                 )}
-                <Button variant={buttonVariant} asChild className="w-full" onClick={() => setIsOpen(false)}>
-                  <Link href="/checkout">Get Started</Link>
-                </Button>
               </nav>
             </SheetContent>
           </Sheet>
@@ -170,4 +173,3 @@ export function SiteHeader() {
     </header>
   )
 }
-
