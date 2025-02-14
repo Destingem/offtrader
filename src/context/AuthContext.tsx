@@ -32,8 +32,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const refreshUser = async (): Promise<User | null> => {
     try {
       if (account) {
-        // Check if account is initialized
+        // Přidej log před voláním API
+        console.log("Refreshing user. Appwrite endpoint:", process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT);
+        
+        // Případně zkontroluj i jiné důležité proměnné
+        console.log("Appwrite client config:", account);
+        
         const currentUser = await account.get();
+        console.log("Current user data:", currentUser);
   
         if (currentUser) {
           const user: User = {
@@ -41,16 +47,19 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             name: currentUser.name,
             email: currentUser.email,
           };
-          
+  
           setUser(user);
           return user;
         }
+      } else {
+        console.error("Appwrite account instance is not initialized.");
       }
     } catch (error) {
-      setUser(null);
       console.error("Failed to refresh user:", error);
+      setUser(null);
+      return null;
     }
-    return null; // Explicitně vracíme null, místo aby se funkce ukončila bez návratové hodnoty
+    return null;
   };
 
   const login = async (email: string, password: string) => {
