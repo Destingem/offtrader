@@ -74,22 +74,22 @@ export default function CheckoutPage() {
   const [name, setName] = useState("");
   const [error, setError] = useState("");
 
-  const handlePlanChange = (plan: typeof membershipPlans[0]) => {
+  const handlePlanChange = (plan) => {
     setSelectedPlan(plan);
   };
 
-  const getPrice = (plan: typeof membershipPlans[0]) => {
+  const getPrice = (plan) => {
     return isYearly ? plan.yearlyPrice : plan.monthlyPrice;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
 
     const billingPeriod = isYearly ? "yearly" : "monthly";
     let currentUser = user;
 
-    // If there is no valid session, register the user using the provided inputs.
+    // Pokud není přihlášen, registrujeme uživatele.
     if (!currentUser) {
       if (!email || !password || !name) {
         setError("Vyplňte prosím všechna pole pro registraci.");
@@ -97,25 +97,27 @@ export default function CheckoutPage() {
       }
       try {
         await register(email, password, name);
-        // Wait briefly to allow session initialization
+        // Krátká pauza pro inicializaci session
         await new Promise((resolve) => setTimeout(resolve, 500));
         currentUser = await refreshUser();
         if (!currentUser) {
           setError("Uživatel nebyl nalezen po registraci.");
           return;
         }
-      } catch (regError: any) {
+      } catch (regError) {
         setError(regError.message || "Registrace se nezdařila");
         return;
       }
     }
 
-    // Prepare the payment payload with internal data.
+    // Vytvoříme payload s metadaty podle dokumentace YooKassa.
     const paymentPayload = {
-      planId: selectedPlan.id,
-      billingPeriod,
       description: `${selectedPlan.name} Plan Subscription`,
-      userId: currentUser.$id,
+      metadata: {
+        userId: currentUser.$id,
+        planId: selectedPlan.id,
+        billingPeriod: billingPeriod,
+      },
     };
 
     try {
@@ -132,13 +134,13 @@ export default function CheckoutPage() {
         return;
       }
 
-      // Redirect to confirmation URL from YooKassa.
+      // Přesměrujeme uživatele na URL pro potvrzení platby.
       if (data.confirmation?.confirmation_url) {
         window.location.href = data.confirmation.confirmation_url;
       } else {
         setError("Chyba: Neplatná odpověď od platebního systému");
       }
-    } catch (err: any) {
+    } catch (err) {
       setError(err.message || "Došlo k chybě při zpracování platby");
     }
   };
@@ -212,7 +214,7 @@ export default function CheckoutPage() {
               ))}
             </div>
 
-            {/* Show registration form if there is no valid session */}
+            {/* Registrace uživatele, pokud není přihlášen */}
             {!user && (
               <Card className="mb-8">
                 <CardHeader>

@@ -1,27 +1,24 @@
 import { NextResponse } from "next/server";
 import { databases } from "@/lib/serverAppwriteClient";
 
-const pricingPlans: Record<"basic" | "pro" | "elite", { monthly: string; yearly: string }> = {
+const pricingPlans = {
   basic: { monthly: "49.00", yearly: "470.00" },
   pro: { monthly: "99.00", yearly: "950.00" },
   elite: { monthly: "199.00", yearly: "1900.00" },
 };
 
-export async function POST(request: Request) {
+export async function POST(request) {
   try {
-    const { planId, billingPeriod, description, userId } = await request.json() as {
-      planId: "basic" | "pro" | "elite";
-      billingPeriod: "monthly" | "yearly";
-      description?: string;
-      userId: string;
-    };
-
+    const body = await request.json();
+    // Očekáváme, že metadata bude obsahovat planId, billingPeriod a userId
+    const { metadata, description } = body;
     if (
-      !planId ||
-      !billingPeriod ||
-      !pricingPlans[planId] ||
-      !["monthly", "yearly"].includes(billingPeriod) ||
-      !userId
+      !metadata ||
+      !metadata.planId ||
+      !metadata.billingPeriod ||
+      !metadata.userId ||
+      !pricingPlans[metadata.planId] ||
+      !["monthly", "yearly"].includes(metadata.billingPeriod)
     ) {
       return NextResponse.json(
         { error: "Neplatné parametry" },
@@ -29,6 +26,9 @@ export async function POST(request: Request) {
       );
     }
 
+    const planId = metadata.planId;
+    const billingPeriod = metadata.billingPeriod;
+    const userId = metadata.userId;
     const amount = pricingPlans[planId][billingPeriod];
 
     const endpoint = process.env.YOOKASSA_ENDPOINT;
@@ -46,6 +46,7 @@ export async function POST(request: Request) {
       .toString(36)
       .substring(2, 15)}`;
 
+    // Přidáme metadata do payloadu, které budou odeslány do YooKassa
     const payload = {
       amount: {
         value: amount,
@@ -64,6 +65,7 @@ export async function POST(request: Request) {
         description && description.length <= 128
           ? description
           : "Payment description",
+      metadata: metadata,
     };
 
     const auth = Buffer.from(`${shopId}:${secretKey}`).toString("base64");
@@ -91,22 +93,22 @@ export async function POST(request: Request) {
     if (data.payment_method?.id) {
       try {
         await databases.updateDocument(
-          process.env.APPWRITE_DATABASE_ID!,
-          process.env.APPWRITE_COLLECTION_ID!,
+          process.env.APPWRITE_DATABASE_ID,
+          process.env.APPWRITE_COLLECTION_ID,
           userId,
           { paymentMethodId: data.payment_method.id }
         );
-      } catch (updateError: any) {
-        // Pokud dokument neexistuje (error kód 404), vytvoř dokument
+      } catch (updateError) {
+        // Pokud dokument neexistuje (error kód 404), vytvoříme nový dokument
         if (updateError.code === 404) {
           try {
             await databases.createDocument(
-              process.env.APPWRITE_DATABASE_ID!,
-              process.env.APPWRITE_COLLECTION_ID!,
+              process.env.APPWRITE_DATABASE_ID,
+              process.env.APPWRITE_COLLECTION_ID,
               userId,
               { paymentMethodId: data.payment_method.id }
             );
-          } catch (createError: any) {
+          } catch (createError) {
             console.error("Failed to create document:", createError);
             return NextResponse.json(
               { error: "Failed to store payment method ID" },
@@ -124,7 +126,7 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json(data, { status: 200 });
-  } catch (error: any) {
+  } catch (error) {
     return NextResponse.json(
       { error: error.message || error.toString() },
       { status: 500 }
