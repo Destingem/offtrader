@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { membershipPlans } from "@/config/plans";
+import { useAuth } from "@/context/AuthContext";
 import {
   Card,
   CardContent,
@@ -17,62 +19,24 @@ import { Check } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { SiteHeader } from "@/components/site-header";
 import { Footer } from "@/components/footer";
-import { useAuth } from "@/context/AuthContext";
-
-const membershipPlans = [
-  {
-    id: "basic",
-    name: "Basic",
-    monthlyPrice: 49,
-    yearlyPrice: 470,
-    description: "Essential tools to start your journey",
-    features: [
-      "Access to 2 courses",
-      "Basic community access",
-      "Monthly Q&A sessions",
-      "Email support",
-    ],
-  },
-  {
-    id: "pro",
-    name: "Pro",
-    monthlyPrice: 99,
-    yearlyPrice: 950,
-    description: "Advanced features for serious entrepreneurs",
-    features: [
-      "Access to all courses",
-      "Priority community access",
-      "Weekly live coaching",
-      "24/7 email and chat support",
-      "Exclusive webinars",
-    ],
-  },
-  {
-    id: "elite",
-    name: "Elite",
-    monthlyPrice: 199,
-    yearlyPrice: 1900,
-    description: "Ultimate package for maximum success",
-    features: [
-      "Access to all courses and future releases",
-      "VIP community access",
-      "Daily live coaching",
-      "24/7 priority support",
-      "One-on-one mentorship",
-      "Exclusive mastermind group",
-    ],
-  },
-];
 
 export default function CheckoutPage() {
   const router = useRouter();
-  const { user, register, refreshUser } = useAuth();
+  const { user, register, refreshUser, referralCode } = useAuth();
   const [isYearly, setIsYearly] = useState(true);
   const [selectedPlan, setSelectedPlan] = useState(membershipPlans[1]);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [error, setError] = useState("");
+  const [referralInput, setReferralInput] = useState(referralCode || "");
+
+  // Automatické nastavení referral kódu z kontextu
+  useEffect(() => {
+    if (referralCode) {
+      setReferralInput(referralCode);
+    }
+  }, [referralCode]);
 
   const handlePlanChange = (plan) => {
     setSelectedPlan(plan);
@@ -89,7 +53,7 @@ export default function CheckoutPage() {
     const billingPeriod = isYearly ? "yearly" : "monthly";
     let currentUser = user;
 
-    // Pokud není přihlášen, registrujeme uživatele.
+    // Pokud není uživatel přihlášen, registrujeme ho.
     if (!currentUser) {
       if (!email || !password || !name) {
         setError("Vyplňte prosím všechna pole pro registraci.");
@@ -110,17 +74,31 @@ export default function CheckoutPage() {
       }
     }
 
-    // Vytvoříme payload s metadaty podle dokumentace YooKassa.
+    // Vytvoříme payload s metadaty podle dokumentace YooKassa, včetně referral kódu (pokud existuje)
     const paymentPayload = {
       description: `${selectedPlan.name} Plan Subscription`,
       metadata: {
         userId: currentUser.$id,
         planId: selectedPlan.id,
         billingPeriod: billingPeriod,
+        referralCode: referralInput || null,
       },
     };
 
     try {
+      // Pokud je zadán referral kód, vytvoříme referral záznam
+      if (referralInput) {
+        await fetch("/api/referrals", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            referrerId: referralInput,
+            referredId: currentUser.$id,
+            subscriptionPlan: selectedPlan.id,
+          }),
+        });
+      }
+
       const res = await fetch("/api/payment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -214,7 +192,7 @@ export default function CheckoutPage() {
               ))}
             </div>
 
-            {/* Registrace uživatele, pokud není přihlášen */}
+            {/* Pokud uživatel není přihlášen, zobrazíme registrační formulář */}
             {!user && (
               <Card className="mb-8">
                 <CardHeader>
@@ -274,6 +252,16 @@ export default function CheckoutPage() {
                 </div>
                 <div className="text-sm text-muted-foreground mt-2">
                   {isYearly ? "Annual" : "Monthly"} payment. You can cancel anytime.
+                </div>
+                <div className="space-y-2 mt-4">
+                  <Label htmlFor="referral">Referral Code</Label>
+                  <Input
+                    id="referral"
+                    type="text"
+                    placeholder="Enter referral code (optional)"
+                    value={referralInput}
+                    onChange={(e) => setReferralInput(e.target.value)}
+                  />
                 </div>
               </CardContent>
               <CardFooter>

@@ -24,11 +24,13 @@ const AuthContext = createContext<AuthContextType>({
   login: async () => {},
   register: async () => {},
   logout: async () => {},
+  referralCode: null,
+  setReferralCode: () => {},
 });
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
-
+  const [referralCode, setReferralCode] = useState(null)
   const refreshUser = async (): Promise<User | null> => {
     try {
       if (account) {
@@ -97,7 +99,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, setUser, refreshUser, login, register, logout }}>
+    <AuthContext.Provider value={{ user, setUser, refreshUser, login, register, logout, referralCode, setReferralCode }}>
       {children}
     </AuthContext.Provider>
   );
