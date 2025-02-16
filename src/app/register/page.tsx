@@ -28,7 +28,18 @@ export default function RegisterPage() {
     setError("");
 
     try {
+      // Nejprve registrujeme uživatele v Appwrite
       await register(email, password, name);
+      // Poté voláme náš API endpoint, který vytvoří Moodle profil
+      const res = await fetch("/api/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password, name })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Moodle registration failed");
+      }
       router.push("/dashboard");
     } catch (err: any) {
       setError(err.message || "Registration failed");

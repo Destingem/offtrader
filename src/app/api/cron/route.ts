@@ -1,63 +1,57 @@
+// /api/cron/route.js
 import { NextResponse } from "next/server";
+import { Query } from "node-appwrite";
 import { databases } from "@/lib/serverAppwriteClient";
 
-export async function POST(request: Request) {
-  try {
-    const now = new Date();
+// Funkce pro aktualizaci předplatného v Moodle
+async function updateMoodleForExpiredSubscription(userId) {
+  const moodleBaseUrl = "https://academy.offtrader.ru/r.php/api/rest/v2";
+  const token = process.env.MOODLE_TOKEN;
+  const url = `${moodleBaseUrl}/user/${userId}/preferences/subscription_status?wstoken=${token}&moodlewsrestformat=json`;
+  const body = { value: "inactive" };
 
-    // List all user subscription documents.
-    // Adjust the limit or pagination as needed.
-    const response = await databases.listDocuments(
-      process.env.APPWRITE_DATABASE_ID!,
-      process.env.APPWRITE_COLLECTION_ID!,
-      []
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(body)
+  });
+  return response.json();
+}
+
+export async function GET(request) {
+  try {
+    const now = new Date().toISOString();
+
+    // Načtení aktivních předplatných, jejichž datum expirace již uplynulo
+    const expiredSubscriptions = await databases.listDocuments(
+      process.env.APPWRITE_DATABASE_ID,
+      process.env.APPWRITE_COLLECTION_ID,
+      [
+        Query.equal("subscriptionStatus", "active"),
+        Query.lessThan("subscriptionExpiresAt", now)
+      ]
     );
 
-    const users = response.documents;
-    let updatedCount = 0;
-
-    for (const user of users) {
-      // Expected fields in each document:
-      // - subscriptionStatus (string): e.g., "active"
-      // - subscriptionPlan (string): e.g., "basic", "pro", "elite"
-      // - subscriptionExpiresAt (string): ISO date of expiration.
-      // Optional field to store group membership: group
-
-      let updateData: Record<string, any> = {};
-
-      const expiresAt = user.subscriptionExpiresAt;
-      const status = user.subscriptionStatus;
-      const plan = user.subscriptionPlan;
-
-      if (status === "active" && expiresAt) {
-        const expirationDate = new Date(expiresAt);
-        if (expirationDate > now) {
-          // Subscription is valid.
-          updateData.group = plan; // assign group based on plan
-        } else {
-          // Subscription expired.
-          updateData.group = "";
-          updateData.subscriptionStatus = "expired";
-        }
-      } else {
-        // No active subscription.
-        updateData.group = "";
-      }
-
-      // Update the document only if changes are detected.
-      // (For brevity, we'll update every document.)
-      await databases.updateDocument(
-        process.env.APPWRITE_DATABASE_ID!,
-        process.env.APPWRITE_COLLECTION_ID!,
-        user.$id,
-        updateData
+    // Pro každý vypršelý záznam:
+    for (const subscription of expiredSubscriptions.documents) {
+      const userId = subscription.$id; // Předpokládáme, že document id odpovídá userId
+      // Aktualizace v Moodle – nastavíme předplatné jako neaktivní
+      await updateMoodleForExpiredSubscription(userId);
+      // Odstranění předplatného z databáze
+      await databases.deleteDocument(
+        process.env.APPWRITE_DATABASE_ID,
+        process.env.APPWRITE_COLLECTION_ID,
+        userId
       );
-      updatedCount++;
     }
 
-    return NextResponse.json({ success: true, updated: updatedCount }, { status: 200 });
-  } catch (error: any) {
-    console.error("Error updating user groups:", error);
+    return NextResponse.json({
+      message: "Cron job executed",
+      processed: expiredSubscriptions.documents.length
+    });
+  } catch (error) {
     return NextResponse.json(
       { error: error.message || "Server error" },
       { status: 500 }

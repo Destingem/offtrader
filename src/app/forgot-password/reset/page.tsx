@@ -39,13 +39,12 @@ export default function ResetPasswordPage() {
       setSecret(sec);
     }
 
-    // Check expiration if provided.
+    // Kontrola expirace, pokud je poskytnuta.
     if (expParam) {
-      // Replace '+' with ' ' to correctly parse date string if needed.
       const expString = expParam.replace(/\+/g, " ");
       const expireDate = new Date(expString);
       if (expireDate < new Date()) {
-        
+        setExpired(true);
       }
     }
   }, []);
@@ -71,7 +70,22 @@ export default function ResetPasswordPage() {
     }
 
     try {
+      // Aktualizace hesla v Appwrite.
       await account.updateRecovery(userId, secret, newPassword);
+      
+      // Aktualizace hesla i v Moodle pomocí našeho API endpointu.
+      const moodleResponse = await fetch("/api/moodle/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, newPassword, confirmPassword }),
+      });
+      const moodleData = await moodleResponse.json();
+      if (!moodleResponse.ok) {
+        // Pokud Moodle API selže, můžete to logovat nebo informovat administrátora,
+        // ale heslo v Appwrite již bylo změněno.
+        console.error("Moodle update error:", moodleData.error);
+      }
+
       setSuccess("Password updated successfully. Redirecting to login...");
       setTimeout(() => {
         router.push("/login");

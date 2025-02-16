@@ -61,9 +61,13 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-8">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col space-y-4">
         <h1 className="text-3xl font-bold">Welcome, {userData.name}</h1>
         <p>{userData.email}</p>
+        <p className="text-lg">
+          Elearning se nachází na <a href="https://academy.offtrader.ru/" className="text-blue-500 underline">https://academy.offtrader.ru/</a>. 
+          Pro přihlášení použijte jako login váš email co používáte zde a stejné heslo.
+        </p>
       </div>
 
       <div className="grid gap-8 md:grid-cols-2">
