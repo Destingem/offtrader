@@ -1,11 +1,20 @@
 import { NextResponse } from "next/server";
 import { Query, Client, Databases, Users } from "node-appwrite";
 
+// Types
+type SubscriptionPlan = 'basic' | 'pro' | 'elite';
+type CohortMap = Record<SubscriptionPlan, string>;
+
+// Type guard
+function isValidPlan(plan: string): plan is SubscriptionPlan {
+  return ['basic', 'pro', 'elite'].includes(plan);
+}
+
 // Initialize Appwrite client
 const client = new Client()
-  .setEndpoint(process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT)
-  .setProject(process.env.NEXT_PUBLIC_APPWRITE_PROJECT)
-  .setKey(process.env.APPWRITE_API_KEY);
+  .setEndpoint(process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT!)
+  .setProject(process.env.NEXT_PUBLIC_APPWRITE_PROJECT!)
+  .setKey(process.env.APPWRITE_API_KEY!);
 
 const databases = new Databases(client);
 const users = new Users(client);
@@ -15,7 +24,7 @@ const SUBSCRIPTION_COLLECTION = process.env.APPWRITE_COLLECTION_ID;
 const MOODLE_TOKEN = process.env.MOODLE_TOKEN;
 const MOODLE_BASE_URL = "https://academy.offtrader.ru/webservice/rest/server.php";
 
-const COHORTS = {
+const COHORTS: CohortMap = {
   basic: "1",
   pro: "2",
   elite: "3",
@@ -77,8 +86,8 @@ async function getAllCohortMembers(): Promise<Map<string, string[]>> {
 async function removeExpiredSubscriptions(): Promise<string[]> {
   const now = new Date().toISOString();
   const expiredSubscriptions = await databases.listDocuments(
-    DATABASE_ID,
-    SUBSCRIPTION_COLLECTION,
+    DATABASE_ID!,
+    SUBSCRIPTION_COLLECTION!,
     [
       Query.equal("subscriptionStatus", "active"),
       Query.lessThan("subscriptionExpiresAt", now)
@@ -87,7 +96,7 @@ async function removeExpiredSubscriptions(): Promise<string[]> {
 
   const expiredIds = [];
   for (const subscription of expiredSubscriptions.documents) {
-    await databases.deleteDocument(DATABASE_ID, SUBSCRIPTION_COLLECTION, subscription.$id);
+    await databases.deleteDocument(DATABASE_ID!, SUBSCRIPTION_COLLECTION!, subscription.$id);
     expiredIds.push(subscription.$id);
   }
   
@@ -141,23 +150,54 @@ async function syncMoodleCohorts() {
   
   console.log("Getting active subscriptions from Appwrite...");
   const activeSubscriptions = await databases.listDocuments(
-    DATABASE_ID,
-    SUBSCRIPTION_COLLECTION,
+    DATABASE_ID!,
+    SUBSCRIPTION_COLLECTION!,
     [Query.equal("subscriptionStatus", "active")]
   );
-  
-  const activeSubscriptionMap = new Map(
-    activeSubscriptions.documents.map(sub => [sub.$id, sub.subscriptionPlan.toLowerCase()])
-  );
 
-  console.log(`Processing ${cohortMembers.size} Moodle users...`);
+  console.log(`Processing ${activeSubscriptions.documents.length} active subscriptions...`);
+  
+  // First process all active subscriptions to ensure users are in correct cohorts
+  for (const subscription of activeSubscriptions.documents) {
+    try {
+      const plan = subscription.subscriptionPlan.toLowerCase();
+      if (!isValidPlan(plan)) continue;
+
+      const appwriteUser = await users.get(subscription.$id);
+      const moodleUserId = await getMoodleUserId(appwriteUser.email);
+      
+      if (!moodleUserId) {
+        console.log(`No Moodle user found for ${appwriteUser.email}`);
+        continue;
+      }
+
+      const correctCohortId = COHORTS[plan];
+      const currentCohorts = cohortMembers.get(moodleUserId) || [];
+
+      // Remove from incorrect cohorts
+      for (const cohortId of currentCohorts) {
+        if (cohortId !== correctCohortId) {
+          await removeMemberFromCohort(moodleUserId, cohortId);
+        }
+      }
+
+      // Add to correct cohort if needed
+      if (!currentCohorts.includes(correctCohortId)) {
+        console.log(`Adding ${appwriteUser.email} to cohort ${correctCohortId}`);
+        await addMemberToCohort(moodleUserId, correctCohortId);
+      }
+    } catch (error) {
+      console.error('Error processing subscription:', error);
+      continue;
+    }
+  }
+
+  // Then clean up Moodle users without active subscriptions
+  console.log(`Cleaning up ${cohortMembers.size} Moodle users...`);
   for (const [moodleUserId, currentCohorts] of cohortMembers.entries()) {
     try {
       const moodleUser = await getMoodleUserById(moodleUserId);
-      if (!moodleUser?.email) {
-        console.log(`No email found for Moodle user ${moodleUserId}`);
-        continue;
-      }
+      if (!moodleUser?.email) continue;
 
       const appwriteUsers = await users.list([Query.equal("email", moodleUser.email)]);
       const appwriteUser = appwriteUsers.users[0];
@@ -170,28 +210,16 @@ async function syncMoodleCohorts() {
         continue;
       }
 
-      const activePlan = activeSubscriptionMap.get(appwriteUser.$id);
-      if (!activePlan) {
+      // Check if user has active subscription
+      const hasActiveSubscription = activeSubscriptions.documents.some(
+        sub => sub.$id === appwriteUser.$id
+      );
+
+      if (!hasActiveSubscription) {
         console.log(`Removing ${moodleUser.email} - no active subscription`);
         for (const cohortId of currentCohorts) {
           await removeMemberFromCohort(moodleUserId, cohortId);
         }
-        continue;
-      }
-
-      const correctCohortId = COHORTS[activePlan];
-      console.log(`Updating ${moodleUser.email} to cohort ${correctCohortId}`);
-      
-      // Remove from incorrect cohorts
-      for (const cohortId of currentCohorts) {
-        if (cohortId !== correctCohortId) {
-          await removeMemberFromCohort(moodleUserId, cohortId);
-        }
-      }
-      
-      // Add to correct cohort if needed
-      if (!currentCohorts.includes(correctCohortId)) {
-        await addMemberToCohort(moodleUserId, correctCohortId);
       }
     } catch (error) {
       console.error(`Error processing Moodle user ${moodleUserId}:`, error);
@@ -217,7 +245,7 @@ export async function GET(request: Request) {
   } catch (error) {
     console.error("Sync error:", error);
     return NextResponse.json(
-      { error: error.message }, 
+      { error: error instanceof Error ? error.message : 'Unknown error' }, 
       { status: 500 }
     );
   }

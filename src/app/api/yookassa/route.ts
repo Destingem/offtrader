@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { Query } from "node-appwrite";
 import { databases } from "@/lib/serverAppwriteClient";
 
-export async function POST(request) {
+export async function POST(request: Request) {
   try {
     const eventData = await request.json();
 
@@ -45,8 +45,8 @@ export async function POST(request) {
         if (userId) {
           try {
             await databases.updateDocument(
-              process.env.APPWRITE_DATABASE_ID,
-              process.env.APPWRITE_COLLECTION_ID,
+              process.env.APPWRITE_DATABASE_ID!,
+              process.env.APPWRITE_COLLECTION_ID!,
               userId,
               {
                 subscriptionStatus: "active",
@@ -62,7 +62,7 @@ export async function POST(request) {
         if (userId) {
           try {
             const referralRecords = await databases.listDocuments(
-              process.env.APPWRITE_DATABASE_ID,
+              process.env.APPWRITE_DATABASE_ID!,
               "referrals",
               [Query.equal("referredId", userId)]
             );
@@ -75,7 +75,7 @@ export async function POST(request) {
                 const newCommission = (currentCommission + commission).toFixed(2);
 
                 await databases.updateDocument(
-                  process.env.APPWRITE_DATABASE_ID,
+                  process.env.APPWRITE_DATABASE_ID!,
                   "referrals",
                   referralDoc.$id,
                   {
@@ -100,7 +100,8 @@ export async function POST(request) {
     }
 
     return NextResponse.json({ received: true }, { status: 200 });
-  } catch (err) {
-    return NextResponse.json({ error: err.message || "Server error" }, { status: 500 });
+  } catch (err: unknown) {
+    const errorMessage = err instanceof Error ? err.message : "Server error";
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }

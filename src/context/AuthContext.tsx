@@ -1,6 +1,6 @@
 "use client";
-import { createContext, useContext, useEffect, useState } from "react";
-import { account, ID } from "@/lib/appwriteClient"; // Import account from appwriteClient
+import { createContext, useContext, useEffect, useState, Dispatch, SetStateAction } from "react";
+import { account, ID } from "@/lib/appwriteClient";
 
 interface User {
   $id: string;
@@ -15,6 +15,8 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name: string) => Promise<void>;
   logout: () => Promise<void>;
+  referralCode: string | null;
+  setReferralCode: Dispatch<SetStateAction<string | null>>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -30,7 +32,7 @@ const AuthContext = createContext<AuthContextType>({
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [referralCode, setReferralCode] = useState(null)
+  const [referralCode, setReferralCode] = useState<string | null>(null);
   const refreshUser = async (): Promise<User | null> => {
     try {
       if (account) {
@@ -99,7 +101,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, setUser, refreshUser, login, register, logout, referralCode, setReferralCode }}>
+    <AuthContext.Provider value={{ 
+      user, 
+      setUser, 
+      refreshUser, 
+      login, 
+      register, 
+      logout, 
+      referralCode, 
+      setReferralCode 
+    }}>
       {children}
     </AuthContext.Provider>
   );
