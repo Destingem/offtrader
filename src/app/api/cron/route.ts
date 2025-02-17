@@ -1,59 +1,223 @@
-// /api/cron/route.js
 import { NextResponse } from "next/server";
-import { Query } from "node-appwrite";
-import { databases } from "@/lib/serverAppwriteClient";
+import { Query, Client, Databases, Users } from "node-appwrite";
 
-// Funkce pro aktualizaci předplatného v Moodle
-async function updateMoodleForExpiredSubscription(userId) {
-  const moodleBaseUrl = "https://academy.offtrader.ru/r.php/api/rest/v2";
-  const token = process.env.MOODLE_TOKEN;
-  const url = `${moodleBaseUrl}/user/${userId}/preferences/subscription_status?wstoken=${token}&moodlewsrestformat=json`;
-  const body = { value: "inactive" };
+// Initialize Appwrite client
+const client = new Client()
+  .setEndpoint(process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT)
+  .setProject(process.env.NEXT_PUBLIC_APPWRITE_PROJECT)
+  .setKey(process.env.APPWRITE_API_KEY);
 
-  const response = await fetch(url, {
+const databases = new Databases(client);
+const users = new Users(client);
+
+const DATABASE_ID = process.env.APPWRITE_DATABASE_ID;
+const SUBSCRIPTION_COLLECTION = process.env.APPWRITE_COLLECTION_ID;
+const MOODLE_TOKEN = process.env.MOODLE_TOKEN;
+const MOODLE_BASE_URL = "https://academy.offtrader.ru/webservice/rest/server.php";
+
+const COHORTS = {
+  basic: "1",
+  pro: "2",
+  elite: "3",
+};
+
+async function getMoodleUserId(email: string): Promise<string | null> {
+  const searchUrl = `${MOODLE_BASE_URL}?wsfunction=core_user_get_users_by_field&wstoken=${MOODLE_TOKEN}&moodlewsrestformat=json`;
+  const formData = new URLSearchParams();
+  formData.append("field", "email");
+  formData.append("values[0]", email);
+
+  const response = await fetch(searchUrl, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify(body)
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: formData.toString(),
   });
-  return response.json();
+  
+  const data = await response.json();
+  return (!response.ok || !Array.isArray(data) || data.length === 0) ? null : data[0].id;
 }
 
-export async function GET(request) {
-  try {
-    const now = new Date().toISOString();
+async function getMoodleUserById(moodleUserId: string): Promise<{ email: string } | null> {
+  const userUrl = `${MOODLE_BASE_URL}?wsfunction=core_user_get_users_by_field&wstoken=${MOODLE_TOKEN}&moodlewsrestformat=json&field=id&values[0]=${moodleUserId}`;
+  const response = await fetch(userUrl);
+  const data = await response.json();
+  return data[0] || null;
+}
 
-    // Načtení aktivních předplatných, jejichž datum expirace již uplynulo
-    const expiredSubscriptions = await databases.listDocuments(
-      process.env.APPWRITE_DATABASE_ID,
-      process.env.APPWRITE_COLLECTION_ID,
-      [
-        Query.equal("subscriptionStatus", "active"),
-        Query.lessThan("subscriptionExpiresAt", now)
-      ]
-    );
-
-    // Pro každý vypršelý záznam:
-    for (const subscription of expiredSubscriptions.documents) {
-      const userId = subscription.$id; // Předpokládáme, že document id odpovídá userId
-      // Aktualizace v Moodle – nastavíme předplatné jako neaktivní
-      await updateMoodleForExpiredSubscription(userId);
-      // Odstranění předplatného z databáze
-      await databases.deleteDocument(
-        process.env.APPWRITE_DATABASE_ID,
-        process.env.APPWRITE_COLLECTION_ID,
-        userId
-      );
+async function getAllCohortMembers(): Promise<Map<string, string[]>> {
+  const cohortMembers = new Map<string, string[]>();
+  
+  for (const cohortId of Object.values(COHORTS)) {
+    const getMembersUrl = `${MOODLE_BASE_URL}?wsfunction=core_cohort_get_cohort_members&wstoken=${MOODLE_TOKEN}&moodlewsrestformat=json`;
+    const formData = new URLSearchParams();
+    formData.append("cohortids[0]", cohortId);
+    
+    const response = await fetch(getMembersUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: formData.toString(),
+    });
+    
+    const data = await response.json();
+    if (Array.isArray(data)) {
+      for (const cohort of data) {
+        for (const userId of cohort.userids) {
+          const existing = cohortMembers.get(userId) || [];
+          if (!existing.includes(cohortId)) {
+            cohortMembers.set(userId, [...existing, cohortId]);
+          }
+        }
+      }
     }
+  }
+  
+  return cohortMembers;
+}
 
-    return NextResponse.json({
-      message: "Cron job executed",
-      processed: expiredSubscriptions.documents.length
+async function removeExpiredSubscriptions(): Promise<string[]> {
+  const now = new Date().toISOString();
+  const expiredSubscriptions = await databases.listDocuments(
+    DATABASE_ID,
+    SUBSCRIPTION_COLLECTION,
+    [
+      Query.equal("subscriptionStatus", "active"),
+      Query.lessThan("subscriptionExpiresAt", now)
+    ]
+  );
+
+  const expiredIds = [];
+  for (const subscription of expiredSubscriptions.documents) {
+    await databases.deleteDocument(DATABASE_ID, SUBSCRIPTION_COLLECTION, subscription.$id);
+    expiredIds.push(subscription.$id);
+  }
+  
+  return expiredIds;
+}
+
+async function removeMemberFromCohort(moodleUserId: string, cohortId: string) {
+  const removeParams = new URLSearchParams();
+  removeParams.append("members[0][cohortid]", cohortId);
+  removeParams.append("members[0][userid]", moodleUserId);
+
+  const response = await fetch(
+    `${MOODLE_BASE_URL}?wsfunction=core_cohort_delete_cohort_members&wstoken=${MOODLE_TOKEN}&moodlewsrestformat=json`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: removeParams.toString(),
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to remove member from cohort: ${response.statusText}`);
+  }
+}
+
+async function addMemberToCohort(moodleUserId: string, cohortId: string) {
+  const formData = new URLSearchParams();
+  formData.append("members[0][cohorttype][type]", "id");
+  formData.append("members[0][cohorttype][value]", cohortId);
+  formData.append("members[0][usertype][type]", "id");
+  formData.append("members[0][usertype][value]", moodleUserId);
+
+  const response = await fetch(
+    `${MOODLE_BASE_URL}?wsfunction=core_cohort_add_cohort_members&wstoken=${MOODLE_TOKEN}&moodlewsrestformat=json`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: formData.toString(),
+    }
+  );
+
+  const data = await response.json();
+  if (data.exception || data.error) {
+    throw new Error(data.message || data.error);
+  }
+}
+
+async function syncMoodleCohorts() {
+  console.log("Getting all Moodle cohort members...");
+  const cohortMembers = await getAllCohortMembers();
+  
+  console.log("Getting active subscriptions from Appwrite...");
+  const activeSubscriptions = await databases.listDocuments(
+    DATABASE_ID,
+    SUBSCRIPTION_COLLECTION,
+    [Query.equal("subscriptionStatus", "active")]
+  );
+  
+  const activeSubscriptionMap = new Map(
+    activeSubscriptions.documents.map(sub => [sub.$id, sub.subscriptionPlan.toLowerCase()])
+  );
+
+  console.log(`Processing ${cohortMembers.size} Moodle users...`);
+  for (const [moodleUserId, currentCohorts] of cohortMembers.entries()) {
+    try {
+      const moodleUser = await getMoodleUserById(moodleUserId);
+      if (!moodleUser?.email) {
+        console.log(`No email found for Moodle user ${moodleUserId}`);
+        continue;
+      }
+
+      const appwriteUsers = await users.list([Query.equal("email", moodleUser.email)]);
+      const appwriteUser = appwriteUsers.users[0];
+      
+      if (!appwriteUser) {
+        console.log(`Removing ${moodleUser.email} - no Appwrite user found`);
+        for (const cohortId of currentCohorts) {
+          await removeMemberFromCohort(moodleUserId, cohortId);
+        }
+        continue;
+      }
+
+      const activePlan = activeSubscriptionMap.get(appwriteUser.$id);
+      if (!activePlan) {
+        console.log(`Removing ${moodleUser.email} - no active subscription`);
+        for (const cohortId of currentCohorts) {
+          await removeMemberFromCohort(moodleUserId, cohortId);
+        }
+        continue;
+      }
+
+      const correctCohortId = COHORTS[activePlan];
+      console.log(`Updating ${moodleUser.email} to cohort ${correctCohortId}`);
+      
+      // Remove from incorrect cohorts
+      for (const cohortId of currentCohorts) {
+        if (cohortId !== correctCohortId) {
+          await removeMemberFromCohort(moodleUserId, cohortId);
+        }
+      }
+      
+      // Add to correct cohort if needed
+      if (!currentCohorts.includes(correctCohortId)) {
+        await addMemberToCohort(moodleUserId, correctCohortId);
+      }
+    } catch (error) {
+      console.error(`Error processing Moodle user ${moodleUserId}:`, error);
+      continue;
+    }
+  }
+}
+
+export async function GET(request: Request) {
+  try {
+    console.log("Starting membership sync...");
+    
+    const expiredIds = await removeExpiredSubscriptions();
+    console.log("Removed expired subscriptions:", expiredIds);
+    
+    await syncMoodleCohorts();
+    console.log("Completed Moodle cohort sync");
+    
+    return NextResponse.json({ 
+      success: true,
+      expiredSubscriptions: expiredIds
     });
   } catch (error) {
+    console.error("Sync error:", error);
     return NextResponse.json(
-      { error: error.message || "Server error" },
+      { error: error.message }, 
       { status: 500 }
     );
   }

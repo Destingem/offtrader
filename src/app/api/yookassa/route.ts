@@ -17,7 +17,7 @@ export async function POST(request) {
         const payment = eventData.object;
         const createdAt = new Date(payment.created_at);
         let expiration = new Date(createdAt);
-
+        console.log(payment);
         let billingPeriod = payment.metadata?.billingPeriod;
         if (!billingPeriod && payment.description) {
           billingPeriod = payment.description.toLowerCase().includes("year") ? "yearly" : "monthly";

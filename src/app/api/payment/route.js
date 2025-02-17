@@ -1,11 +1,6 @@
 import { NextResponse } from "next/server";
 import { databases } from "@/lib/serverAppwriteClient";
-
-const pricingPlans = {
-  basic: { monthly: "49.00", yearly: "470.00" },
-  pro: { monthly: "99.00", yearly: "950.00" },
-  elite: { monthly: "199.00", yearly: "1900.00" },
-};
+import {pricingPlans} from "@/config/plansServer";
 
 export async function POST(request) {
   try {

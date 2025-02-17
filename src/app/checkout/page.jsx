@@ -38,6 +38,29 @@ export default function CheckoutPage() {
     }
   }, [referralCode]);
 
+  // Pokud referralInput není nastavený a uživatel je přihlášen, zkusíme ho načíst z API
+  useEffect(() => {
+    async function fetchReferral() {
+      if (user && !referralInput) {
+        try {
+          const res = await fetch(`/api/referrer?userId=${user.$id}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.referrerId) {
+              console.log("Referral code fetched from API:", data.referrerId);
+              setReferralInput(data.referrerId);
+            }
+          } else {
+            console.log("No referral code found via API.");
+          }
+        } catch (err) {
+          console.error("Error fetching referral code:", err);
+        }
+      }
+    }
+    fetchReferral();
+  }, [user, referralInput]);
+
   const handlePlanChange = (plan) => {
     setSelectedPlan(plan);
   };

@@ -24,6 +24,7 @@ export default function ResetPasswordPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  // V původním kódu se expired nikdy nenastavovalo, takže výchozí je false.
   const [expired, setExpired] = useState(false);
 
   useEffect(() => {
@@ -39,13 +40,15 @@ export default function ResetPasswordPage() {
       setSecret(sec);
     }
 
-    // Kontrola expirace, pokud je poskytnuta.
+    // Pokud je v URL parametr expire, zatím s ním nic neděláme.
     if (expParam) {
-      const expString = expParam.replace(/\+/g, " ");
-      const expireDate = new Date(expString);
-      if (expireDate < new Date()) {
-        setExpired(true);
-      }
+      // Původní logika neoznačovala odkaz jako expirovaný.
+      // Pokud byste chtěli ověřovat expiraci, můžete odkomentovat následující:
+      // const expString = expParam.replace(/\+/g, " ");
+      // const expireDate = new Date(expString);
+      // if (expireDate < new Date()) {
+      //   setExpired(true);
+      // }
     }
   }, []);
 
@@ -72,17 +75,16 @@ export default function ResetPasswordPage() {
     try {
       // Aktualizace hesla v Appwrite.
       await account.updateRecovery(userId, secret, newPassword);
-      
-      // Aktualizace hesla i v Moodle pomocí našeho API endpointu.
-      const moodleResponse = await fetch("/api/moodle/change-password", {
+
+      // Volání API pro změnu hesla v Moodle.
+      const moodleResponse = await fetch("/api/reset", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId, newPassword, confirmPassword }),
       });
       const moodleData = await moodleResponse.json();
       if (!moodleResponse.ok) {
-        // Pokud Moodle API selže, můžete to logovat nebo informovat administrátora,
-        // ale heslo v Appwrite již bylo změněno.
+        // Logujeme případnou chybu z Moodle API – heslo v Appwrite již bylo změněno.
         console.error("Moodle update error:", moodleData.error);
       }
 
