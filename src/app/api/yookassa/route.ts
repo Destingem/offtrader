@@ -87,7 +87,7 @@ export async function POST(request: Request) {
             }
 
             // Trigger Moodle sync
-            const syncResponse = await fetch('/api/cron');
+            const syncResponse = await fetch('https://offtrader.ru/api/cron');
             if (!syncResponse.ok) {
               throw new Error('Failed to sync with Moodle');
             }
