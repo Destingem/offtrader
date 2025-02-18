@@ -85,8 +85,15 @@ export async function POST(request: Request) {
                 );
               }
             }
-          } catch (referralError) {
-            // Error handling dle potřeby
+
+            // Trigger Moodle sync
+            const syncResponse = await fetch('/api/cron');
+            if (!syncResponse.ok) {
+              throw new Error('Failed to sync with Moodle');
+            }
+          } catch (error) {
+            console.error('Error processing payment:', error);
+            throw error;
           }
         }
         break;
